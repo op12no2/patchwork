@@ -1,0 +1,120 @@
+--- engine_orig.js
++++ engine_new.js
+@@ -1577,6 +1577,11 @@
+   let mgW = 0, mgB = 0, egW = 0, egB = 0;
+   let phase = 0;
+ 
++  // file occupancy for pawn structure and rook bonuses
++  const wPawnFiles = new Uint8Array(8);
++  const bPawnFiles = new Uint8Array(8);
++
++  // first pass: PST + phase + pawn file map
+   for (let sq = 0; sq < 128; sq++) {
+     if (sq & 0x88) { sq += 7; continue; }
+     const piece = b[sq];
+@@ -1585,20 +1590,100 @@
+     if (piece & BLACK) {
+       mgB += mgPST[idx];
+       egB += egPST[idx];
++      if ((piece & 7) === PAWN) bPawnFiles[sq & 7]++;
+     }
+     else {
+       mgW += mgPST[idx];
+       egW += egPST[idx];
++      if ((piece & 7) === PAWN) wPawnFiles[sq & 7]++;
+     }
+     phase += PHASE_INC[piece & 7];
+   }
+ 
+-  // tapered eval
+-  const mgScore = g_stm === WHITE ? mgW - mgB : mgB - mgW;
+-  const egScore = g_stm === WHITE ? egW - egB : egB - egW;
++  // second pass: pawn structure, rook open files, bishop pair
++  let wBishops = 0, bBishops = 0;
++  let wRooks = 0, bRooks = 0;
++
++  let pawnW = 0, pawnB = 0;
++
++  for (let sq = 0; sq < 128; sq++) {
++    if (sq & 0x88) { sq += 7; continue; }
++    const piece = b[sq];
++    if (!piece) continue;
++    const type = piece & 7;
++    const file = sq & 7;
++    const rank = sq >> 4;
++
++    if (piece & BLACK) {
++
++      if (type === PAWN) {
++        if (bPawnFiles[file] > 1) pawnB -= 10;
++        const hasNeighbour = (file > 0 && bPawnFiles[file - 1]) || (file < 7 && bPawnFiles[file + 1]);
++        if (!hasNeighbour) pawnB -= 15;
++        let passed = 1;
++        for (let r = rank - 1; r >= 0 && passed; r--) {
++          if (wPawnFiles[file] && b[r * 16 + file] === WPAWN) { passed = 0; break; }
++          if (file > 0 && b[r * 16 + file - 1] === WPAWN) { passed = 0; break; }
++          if (file < 7 && b[r * 16 + file + 1] === WPAWN) { passed = 0; break; }
++        }
++        if (passed) {
++          pawnB += 10 + (6 - rank) * 8;
++        }
++      }
++      else if (type === BISHOP) {
++        bBishops++;
++      }
++      else if (type === ROOK) {
++        bRooks++;
++        if (!bPawnFiles[file]) {
++          if (!wPawnFiles[file]) mgB += 20;
++          else mgB += 10;
++        }
++      }
++
++    }
++    else {
++
++      if (type === PAWN) {
++        if (wPawnFiles[file] > 1) pawnW -= 10;
++        const hasNeighbour = (file > 0 && wPawnFiles[file - 1]) || (file < 7 && wPawnFiles[file + 1]);
++        if (!hasNeighbour) pawnW -= 15;
++        let passed = 1;
++        for (let r = rank + 1; r <= 7 && passed; r++) {
++          if (bPawnFiles[file] && b[r * 16 + file] === BPAWN) { passed = 0; break; }
++          if (file > 0 && b[r * 16 + file - 1] === BPAWN) { passed = 0; break; }
++          if (file < 7 && b[r * 16 + file + 1] === BPAWN) { passed = 0; break; }
++        }
++        if (passed) {
++          pawnW += 10 + rank * 8;
++        }
++      }
++      else if (type === BISHOP) {
++        wBishops++;
++      }
++      else if (type === ROOK) {
++        wRooks++;
++        if (!wPawnFiles[file]) {
++          if (!bPawnFiles[file]) mgW += 20;
++          else mgW += 10;
++        }
++      }
++
++    }
++  }
++
++  if (wBishops >= 2) { mgW += 25; egW += 40; }
++  if (bBishops >= 2) { mgB += 25; egB += 40; }
++
+   let mgPhase = phase;
+   if (mgPhase > 24) mgPhase = 24;
+   const egPhase = 24 - mgPhase;
+ 
+-  return (mgScore * mgPhase + egScore * egPhase) / 24 | 0;
++  const pawnScore = g_stm === WHITE ? pawnW - pawnB : pawnB - pawnW;
++  const pawnBlended = (pawnScore * (mgPhase / 2 + egPhase)) / 24 | 0;
++
++  const mgScore = g_stm === WHITE ? mgW - mgB : mgB - mgW;
++  const egScore = g_stm === WHITE ? egW - egB : egB - egW;
++
++  return ((mgScore * mgPhase + egScore * egPhase) / 24 | 0) + pawnBlended;
+ }
+ 

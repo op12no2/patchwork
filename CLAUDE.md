@@ -94,13 +94,13 @@ At the bottom of `engine.js`: `initNodes`, `initZobrist`, `initQpth` run uncondi
 
 ### Procedure
 
-- save chat ui result to e.g. `engines/0001_gpt5_5.diff`
-- apply diff using e.g. `patch -p1 -o engines/0001_gpt5_5.js engine.js < engines/0001_gpt5_5.diff`
+- save chat ui result to e.g. `engines/0001_gpt_5_5.diff`
+- apply diff using e.g. `patch -p1 -o engines/0001_gpt_5_5.js engine.js < engines/0001_gpt_5_5.diff`
 - `chmod +x engines/*.js`
 - add the engine and diff to the repo e.g. `git add engines/*.js && git add engines/*.diff`
 - test
 - SPRT
-- if it passes `cp engines/0001_gpt5_5.js engine.js`
-- add a wiki page called `0001_gpt5_5` with the experiment results
+- if it passes `cp engines/0001_gpt_5_5.js engine.js`
+- add a wiki page called `0001_gpt_5_5` with the experiment results
 - commit and push
 
