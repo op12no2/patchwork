@@ -2,7 +2,7 @@
 
 Cumulative LLM eval using phased sandboxed areas of a chess engine, starting with the evaluation function.
 
-LLMs are given the phase-depndent prompt in ```prompt.md``` and the current chess engine code ```engine.js```. If the new code passes a [0,5] SPRT it becomes ```engine.js```. 
+LLMs are given the phase-dependent prompt in ```prompt.md``` and the current chess engine code ```engine.js```. If the new code passes a [0,5] SPRT it becomes ```engine.js```. 
 
 LLMs are given multiple attempts in a round-robin loop.
 
