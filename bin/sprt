@@ -1,6 +1,6 @@
 #!/bin/bash
 
-e1=engines/0000_original.js
+e1=engines/0001_haiku_4_5.js
 e2=engines/0000_original.js
 
 elo0=0

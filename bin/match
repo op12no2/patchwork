@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # use: bin/match engine1 engine2 num_rounds
-# e.g. bin/match 0000_original 0000_original 5
+# e.g. bin/match 0001_haiku_4_5 0000_original 5
 # note that each round is 2 games played with the engines swapping sides
-# games are played at 10+0.1 time control and so quite quick
+# games are played at 10+0.1 time control and so are quite quick
 
 e1=engines/$1.js
 e2=engines/$2.js
