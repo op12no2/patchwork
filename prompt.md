@@ -1,10 +1,10 @@
-using the current best engine
+using the current best chess engine
 
-./engines/0002_sonnet_4_6.js
+./engines/0003_opus_4_7.js
 
 as your starting point, create a new engine in
 
-./engines/0003_opus_4_7.js 
+./engines/0004_gpt_5_5.js 
 
 with improved playing strength.
 
