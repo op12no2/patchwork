@@ -20,5 +20,5 @@ xychart-beta
   title "Cumulative Elo"
   x-axis "Engine #" [0, 1, 2, 3, 4, 5]
   y-axis "Relative Elo" 0 --> 300
-  line [0, 0, 135, 265, 265, 295]
+  bar [0, 0, 135, 265, 265, 295]
 ```
