@@ -5,6 +5,8 @@
 # note that each round is 2 games played with the engines swapping sides
 # games are played at 10+0.1 time control and so are quite quick
 
+rm -f match.pgn
+
 e1=engines/$1.js
 e2=engines/$2.js
 
@@ -28,3 +30,4 @@ taskset -c $CPUS \
 -engine cmd=$e1 proto=uci tc=10+0.1 timemargin=250 name=${e1name}_1 \
 -engine cmd=$e2 proto=uci tc=10+0.1 timemargin=250 name=${e2name}_2 \
 -openings file=/mnt/d/books/$book.epd format=epd order=random -srand $RANDOM \
+-pgnout file=match.pgn

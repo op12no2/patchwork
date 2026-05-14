@@ -3,6 +3,7 @@
 // usage: node bench.js engine
 // e.g. node bench.js 0000_original
 // performs a search over several positions showing a cumulative node count and nps.
+// takes a second or 2 to run
 
 const enginePath = require('path').resolve('./engines/' + process.argv[2] + '.js');
 console.log(enginePath);

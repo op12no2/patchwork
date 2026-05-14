@@ -1,7 +1,7 @@
 #!/bin/bash
 
-e1=engines/0002_sonnet_4_6.js
-e2=engines/0000_original.js
+e1=engines/0003_opus_4_7.js
+e2=engines/0002_sonnet_4_6.js
 
 elo0=0
 elo1=5

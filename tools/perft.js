@@ -61,21 +61,16 @@ const PERFTFENS = [
   ['fen 8/5k2/8/5N2/5Q2/2K5/8/8                                 w -    -  0 1', 4, 23527,     'ccc-26    '],
 ];
 
-function perftTests(maxDepth) {
+function perftTests() {
 
   let totalNodes = 0;
   let fails = 0;
-  let count = 0;
   const t1 = Date.now();
 
   for (let i = 0; i < PERFTFENS.length; i++) {
 
     const entry = PERFTFENS[i];
     const depth = entry[1];
-
-    if (maxDepth && depth > maxDepth)
-      continue;
-
     const fen = entry[0].replace(/\s+/g, ' ').split(' ');
     const expect = entry[2];
     const id  = entry[3].trim();
@@ -84,7 +79,6 @@ function perftTests(maxDepth) {
 
     const n = perft(0, depth);
     totalNodes += n;
-    count++;
 
     const ok = n === expect;
     if (!ok)
@@ -98,9 +92,8 @@ function perftTests(maxDepth) {
   const nps = ms ? Math.floor(totalNodes / ms * 1000) : 0;
 
   console.log('');
-  console.log(count + ' tests, ' + fails + ' fails, ' + totalNodes + ' nodes in ' + ms + ' ms ' + nps + ' nps');
+  console.log(PERFTFENS.length + ' tests, ' + fails + ' fails, ' + totalNodes + ' nodes in ' + ms + ' ms ' + nps + ' nps');
 
 }
 
-const maxDepth = parseInt(process.argv[2]) || 0;
-perftTests(maxDepth);
+perftTests();
