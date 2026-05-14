@@ -1,0 +1,47 @@
+#!/bin/bash
+# applydiff - apply an LLM-supplied diff to produce a candidate engine
+#
+# Given a basename like 0005_grok_4, applies engines/0005_grok_4.diff to
+# engine.js and writes engines/0005_grok_4.js. If patch fails, runs fixdiff
+# on the diff and retries once.
+#
+# Usage:
+#   applydiff <basename>
+#
+# Example:
+#   applydiff 0005_grok_4
+
+set -euo pipefail
+
+if [ $# -ne 1 ]; then
+  echo "usage: applydiff <basename>" >&2
+  exit 1
+fi
+
+base=$1
+diff=engines/${base}.diff
+out=engines/${base}.js
+src=engine.js
+here=$(dirname "$0")
+
+[ -f "$diff" ] || { echo "applydiff: no such diff: $diff" >&2; exit 1; }
+[ -f "$src" ]  || { echo "applydiff: no such source: $src" >&2; exit 1; }
+
+if patch -p1 -o "$out" "$src" < "$diff"; then
+  chmod +x "$out"
+  echo "applydiff: wrote $out"
+  exit 0
+fi
+
+echo "applydiff: patch failed, running fixdiff and retrying" >&2
+rm -f "$out" "$out.rej"
+"$here/fixdiff" "$diff"
+
+if patch -p1 -o "$out" "$src" < "$diff"; then
+  chmod +x "$out"
+  echo "applydiff: wrote $out (after fixdiff)"
+  exit 0
+fi
+
+echo "applydiff: patch failed even after fixdiff — see $out and $out.rej" >&2
+exit 1
