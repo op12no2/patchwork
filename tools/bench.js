@@ -1,7 +1,11 @@
 "use strict"
 
-// usage: node bench.js [enginePath]   (default ./engine.js)
-const enginePath = require('path').resolve(process.argv[2] || './engine.js');
+// usage: node bench.js engine
+// e.g. node bench.js 0000_original
+// performs a search over several positions showing a cumulative node count and nps.
+
+const enginePath = require('path').resolve('./engines/' + process.argv[2] + '.js');
+console.log(enginePath);
 const { uciExecLine, getNodes } = require(enginePath);
 
 const BENCHFENS = [

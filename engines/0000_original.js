@@ -1,10 +1,35 @@
 #!/usr/bin/node
 
+//
+// Patchwork — a UCI chess engine in pure Node.js, no dependencies, no build step.
+//
+// Single-file, all-globals design: every function and table is at module scope
+// and mutates shared g_* globals. There are no classes (one constructor —
+// nodeStruct — for per-ply search state). The CommonJS exports at the bottom
+// (uciExecLine, position, perft, evaluate, getNodes) are a thin surface for
+// the bench.js / perft.js / eval.js drivers; the engine itself does not call
+// into them.
+//
+// Roughly top-to-bottom: constants → board state globals → Zobrist hashing →
+// transposition table → per-ply node struct → board setup → attack detection
+// → make / unmake → move generation → move ordering → perft → time control →
+// evaluation → search / qsearch → UCI driver → bottom-of-file init.
+//
+
 const INF = 31000;
 const MATE = 30000;
 const MATEISH = 29000;
 const MAX_MOVES = 256;
 const MAX_PLY = 64;
+
+//
+// Piece encoding. Low 3 bits are the piece type (PAWN=1 .. KING=6), bit 3 is
+// the colour (WHITE=0, BLACK=8). So `piece & 7` extracts the type and
+// `piece & 8` (or `piece & BLACK`) extracts the colour. The Wxxx / Bxxx
+// macros below are the combined values. Tables that index by piece (PSTs,
+// Zobrist) are sized `15 * 128` and indexed as `piece * 128 + sq` so the
+// colour bit is part of the index.
+//
 
 const WHITE = 0;
 const BLACK = 8;
@@ -35,9 +60,19 @@ const WHITE_RIGHTS_QUEEN = 2;
 const BLACK_RIGHTS_KING = 4;
 const BLACK_RIGHTS_QUEEN = 8;
 
+//
+// Move encoding. A move is a single 32-bit int:
+//   bits 0..6   = to square (0x88-indexed)
+//   bits 7..13  = from square (0x88-indexed)
+//   bits 14..17 = flags (CAPTURE / EPCAPTURE / CASTLE / PROMOTE)
+//   bits 20+    = promotion piece type (KNIGHT..QUEEN), when PROMOTE is set
+// MOVE_FLAG_NOISY = PROMOTE|CAPTURE is the "is this a tactical move" test
+// used by qsearch entry, move ordering, LMR, and futility/late-move pruning.
+//
+
 const MOVE_FLAG_CAPTURE = 1 << 14;
-const MOVE_FLAG_EPCAPTURE = 2 << 14;  // will also have MOVE_FLAG_CAPTURE set 
-const MOVE_FLAG_CASTLE = 4 << 14;   
+const MOVE_FLAG_EPCAPTURE = 2 << 14;  // will also have MOVE_FLAG_CAPTURE set
+const MOVE_FLAG_CASTLE = 4 << 14;
 const MOVE_FLAG_PROMOTE = 8 << 14; // may also have MOVE_FLAG_CAPTURE set
 const MOVE_FLAG_SPECIAL = MOVE_FLAG_PROMOTE | MOVE_FLAG_EPCAPTURE | MOVE_FLAG_CASTLE;
 const MOVE_FLAG_NOISY = MOVE_FLAG_PROMOTE | MOVE_FLAG_CAPTURE;
@@ -65,7 +100,21 @@ DELTA_VALS[BISHOP] = 350;
 DELTA_VALS[ROOK]   = 525;
 DELTA_VALS[QUEEN]  = 1000;
 
-// board globals - maintained throughout search via make and unmake funcs
+//
+// 0x88 board. g_board has 128 entries; on-board squares are 0x00..0x77 with
+// the low nibble = file (0..7) and the high nibble = rank (0..7). Off-board
+// squares have bit 0x88 set, so `if (sq & 0x88)` is the standard off-board
+// test. Loops over the board use `for (sq = 0; sq < 128; sq++) { if (sq & 0x88)
+// { sq += 7; continue; } ... }` to skip the off-board half.
+//
+// There is no piece list — move generation, evaluation, isDraw all walk
+// g_board directly. The only piece location tracked outside g_board is the
+// king square: g_kingSq[colour] is kept in sync by make / unmake so the
+// in-check test `isAttacked(g_kingSq[stm], nstm)` is cheap.
+//
+// All board state below (g_stm, g_rights, g_ep, g_loHash, g_hiHash, g_kingSq)
+// is mutated incrementally by make / unmake — there is no copy-make.
+//
 
 const g_board = new Uint8Array(128);
 const g_kingSq = new Uint8Array(16); // king square indexed by colour (WHITE=0 or BLACK=8)
@@ -87,6 +136,19 @@ let g_finished = 0; // 1 when time/nodes reached (else 0)
 function now() {
   return performance.now() | 0;
 }
+
+//
+// Zobrist hashing. JS has no native 64-bit integer, so a 64-bit Zobrist hash
+// is split into two independent 32-bit halves (g_loHash / g_hiHash) with
+// parallel tables (g_loPieces / g_hiPieces, g_loRights / g_hiRights, g_loEP /
+// g_hiEP, plus side-to-move toggles g_loStm / g_hiStm). XOR updates run on
+// each half independently. Tables are seeded once at load via Mulberry32
+// from g_seed.
+//
+// position() builds the hash from scratch; make / unmake update it
+// incrementally and push prior hashes onto the g_loHH / g_hiHH stack so
+// isDraw can detect repetition.
+//
 
 let g_seed = 1;
 
@@ -134,6 +196,19 @@ function initZobrist() {
   }
 
 }
+
+//
+// Transposition table. Struct-of-arrays for cache friendliness — seven
+// parallel typed arrays of TT_SIZE = 2^TT_BITS entries (~1M entries, ~18 MB).
+// The arrays are sized as top-level consts so the allocation happens at load
+// time. Lookup is by `g_loHash & TT_MASK` with both halves of the hash
+// verified on hit.
+//
+// The type byte packs the bound kind (TT_EXACT / TT_ALPHA / TT_BETA in the
+// low 2 bits, masked by TT_TYPE_MASK) plus a TT_INCHECK flag in bit 2 — this
+// lets search skip the relatively expensive isAttacked() call on TT hits and
+// restore in-check state without recomputing.
+//
 
 const TT_EXACT = 1;
 const TT_ALPHA = 2;
@@ -184,6 +259,11 @@ function ttClear() {
 
 }
 
+//
+// Mate scores are stored ply-relative in the TT and unwound on retrieval so
+// "mate in N" stays correct regardless of which ply the score came from.
+//
+
 function putAdjustedScore(ply, score) {
 
   if (score < -MATEISH)
@@ -209,6 +289,15 @@ function getAdjustedScore(ply, score) {
     return score;
 
 }
+
+//
+// Per-ply search state. One nodeStruct is allocated for each of MAX_PLY plies
+// (g_ss[0..MAX_PLY-1]) at init and then reused. It holds the move list, the
+// per-move ranks for ordering, the played-moves trail (for history bonus /
+// malus on beta cutoff), the move-iterator state (stage / nextMove / ttMove
+// / inCheck / noisyOnly), the principal variation collected at this ply, and
+// the undo fields the matching unmake call needs to restore exactly.
+//
 
 function nodeStruct() {
 
@@ -458,6 +547,19 @@ function isAttacked(sq, byColour) {
   return 0;
 }
 
+//
+// Repetition and draw bookkeeping. g_loHH / g_hiHH is a stack of prior hashes,
+// pushed by make / make_null and popped by unmake / unmake_null; g_hhNext is
+// the next slot. g_hmClock counts halfmoves since the last irreversible move
+// (pawn push or capture) — pawn moves and captures reset it to 0, position()
+// resets both. isDraw only walks the history back as far as g_hmClock — once
+// you cross an irreversible move you cannot repeat.
+//
+// Note: isDraw treats 2-fold repetition as a draw, not 3-fold. This is
+// load-bearing inside search (more aggressive draw avoidance) and should not
+// be relaxed casually.
+//
+
 const g_loHH = new Int32Array(1024);
 const g_hiHH = new Int32Array(1024);
 let g_hhNext = 0;
@@ -532,6 +634,22 @@ function isDraw() {
   return 0;
 
 }
+
+//
+// make / unmake invariants. make() mutates g_board, g_stm, g_rights, g_ep,
+// g_kingSq, g_loHash / g_hiHash, g_hmClock, and pushes the prior hash onto
+// the history stack. It stores enough into the passed-in node (undoRights /
+// undoEp / undoCaptured / undoLoHash / undoHiHash / undoHmClock) for unmake
+// to invert the operation exactly — there is no copy-make.
+//
+// Three special cases tagged via MOVE_FLAG_SPECIAL: PROMOTE, EPCAPTURE,
+// CASTLE. Everything else (quiet moves and normal captures) takes the fast
+// path at the bottom of make.
+//
+// make_null / unmake_null support null-move pruning in search: they toggle
+// the side to move, clear EP, and push/pop the hash without otherwise
+// touching the board.
+//
 
 function make(node, move) {
 
@@ -778,9 +896,17 @@ function unmake (node, move) {
 
 }
 
-// noisy - captures (inc. EP) and promotions
-// quiet - non-captures excluding promotions
-// quiet and noisy are mutually exclusive throughout
+//
+// Move generation. Three pseudo-legal generators, mutually exclusive in what
+// they emit:
+//   genNoisy    — captures (including en passant) and promotions
+//   genQuiets   — non-captures excluding promotions
+//   genCastling — castling moves only (separate so qsearch can skip them)
+// Each appends to node.moves and updates node.numMoves. None of them filter
+// for own-king-in-check legality — the caller (search / qsearch / perft) is
+// responsible for making the move, testing isAttacked(g_kingSq[stm], nstm),
+// and unmaking if illegal.
+//
 
 function genNoisy(node) {
 
@@ -1123,6 +1249,17 @@ function genCastling(node) {
 
 }
 
+//
+// Quiet move history ("quiet piece-to history"). g_qpth[piece][to] is a
+// per-piece, per-target-square score used to order quiet moves. On a beta
+// cutoff by a quiet move, that move gets `+depth*depth` and the earlier
+// quiet moves that didn't cut off get `-depth*depth` via updateQpth.
+//
+// There is no separate killer-move table — quiet ordering rides entirely on
+// this history. clearQpth runs at the start of each `go` so scores do not
+// persist across UCI search invocations.
+//
+
 const g_qpth = Array(15); // quiet piece to history
 
 function updateQpth(move, bonus) {
@@ -1260,6 +1397,24 @@ function initSearch(node, inCheck, ttMove, noisyOnly) {
 
 }
 
+//
+// Move ordering stage machine. getNextMove walks node.stage:
+//   0  return the TT move if present
+//   1  generate noisy moves, rank them MVV/LVA-ish via rankNoisy, fall
+//      through to stage 2
+//   2  drain best-ranked noisy move; with noisyOnly=1 (qsearch outside
+//      check) stop here
+//   3  generate quiet moves and castling, rank quiets by g_qpth history,
+//      fall through to stage 4
+//   4  drain best-ranked quiet move
+// The case fall-throughs are deliberate — stages 1 and 3 set up the list
+// and immediately serve the first move from it.
+//
+// Caller must initSearch(node, inCheck, ttMove, noisyOnly) before the first
+// call. removeTTMove deduplicates the TT move out of the freshly generated
+// list since stage 0 already returned it.
+//
+
 function getNextMove(node) {
 
   switch (node.stage) {
@@ -1355,6 +1510,19 @@ function perft(ply, depth) {
   return total;
 }
 
+//
+// Time control. initTimeControl parses UCI `go` params (depth/d, nodes,
+// movetime, infinite, ponder, wtime/btime/winc/binc/movestogo) into one of:
+// fixed depth, fixed nodes, fixed movetime, or time-and-increment. The
+// time-and-increment branch budgets `myTime/movestogo + myInc` capped at
+// half the remaining time.
+//
+// Mid-search, search and qsearch call checkTime every 1024 nodes (the
+// `g_nodes & 1023` gate). On expiry it sets g_finished, which is the
+// universal abort flag — every caller in the recursion checks g_finished
+// after a recursive call and returns 0 without trusting the score when set.
+//
+
 function checkTime() {
 
     if (g_finishTime && now() >= g_finishTime)
@@ -1447,18 +1615,21 @@ function initTimeControl(tokens) {
   g_finishTime = g_startTime + ms;
 
 }
-// ============================================================================
-// >>> BEGIN EVAL REGION <<<
-// ============================================================================
-
 //
-// All static evaluation lives between the above banner and the END EVAL REGION
-// banner. Add or replace data structures, helpers, and the contents of
-// initEval() and evaluate() freely.
+// Evaluation. evaluate() returns a centipawn score from the side-to-move
+// perspective (positive = side to move is winning). It walks g_board once,
+// accumulating mg/eg PST contributions per colour and a phase total from
+// PHASE_INC (knight/bishop=1, rook=2, queen=4, clamped to 24). The final
+// score is tapered: `(mgScore*mgPhase + egScore*egPhase) / 24`.
 //
-// evaluate() returns a centipawn score from the side-to-move perspective
-// (positive = side to move is winning). It may read any engine data structures
-// but must not mutate them.
+// Two PSTs (mgPST, egPST), each 15*128 Int16, are built once by initEval
+// from compact 8x8 source tables. White / black indexing flips the rank so
+// the same source table works for both colours. initEval is called at the
+// bottom of this section so the tables are populated at load time.
+//
+// The baseline is Tomasz Michniewski's Simplified Evaluation Function: PST
+// + material, with mg/eg tables identical for every piece except the king.
+// There are no pawn-structure, mobility, or king-safety terms.
 //
 
 const mgPST = new Int16Array(15 * 128);
@@ -1577,11 +1748,6 @@ function evaluate() {
   let mgW = 0, mgB = 0, egW = 0, egB = 0;
   let phase = 0;
 
-  // file occupancy for pawn structure and rook bonuses
-  const wPawnFiles = new Uint8Array(8);
-  const bPawnFiles = new Uint8Array(8);
-
-  // first pass: PST + phase + pawn file map
   for (let sq = 0; sq < 128; sq++) {
     if (sq & 0x88) { sq += 7; continue; }
     const piece = b[sq];
@@ -1590,109 +1756,25 @@ function evaluate() {
     if (piece & BLACK) {
       mgB += mgPST[idx];
       egB += egPST[idx];
-      if ((piece & 7) === PAWN) bPawnFiles[sq & 7]++;
     }
     else {
       mgW += mgPST[idx];
       egW += egPST[idx];
-      if ((piece & 7) === PAWN) wPawnFiles[sq & 7]++;
     }
     phase += PHASE_INC[piece & 7];
   }
 
-  // second pass: pawn structure, rook open files, bishop pair
-  let wBishops = 0, bBishops = 0;
-  let wRooks = 0, bRooks = 0;
-
-  let pawnW = 0, pawnB = 0;
-
-  for (let sq = 0; sq < 128; sq++) {
-    if (sq & 0x88) { sq += 7; continue; }
-    const piece = b[sq];
-    if (!piece) continue;
-    const type = piece & 7;
-    const file = sq & 7;
-    const rank = sq >> 4;
-
-    if (piece & BLACK) {
-
-      if (type === PAWN) {
-        if (bPawnFiles[file] > 1) pawnB -= 10;
-        const hasNeighbour = (file > 0 && bPawnFiles[file - 1]) || (file < 7 && bPawnFiles[file + 1]);
-        if (!hasNeighbour) pawnB -= 15;
-        let passed = 1;
-        for (let r = rank - 1; r >= 0 && passed; r--) {
-          if (wPawnFiles[file] && b[r * 16 + file] === WPAWN) { passed = 0; break; }
-          if (file > 0 && b[r * 16 + file - 1] === WPAWN) { passed = 0; break; }
-          if (file < 7 && b[r * 16 + file + 1] === WPAWN) { passed = 0; break; }
-        }
-        if (passed) {
-          pawnB += 10 + (6 - rank) * 8;
-        }
-      }
-      else if (type === BISHOP) {
-        bBishops++;
-      }
-      else if (type === ROOK) {
-        bRooks++;
-        if (!bPawnFiles[file]) {
-          if (!wPawnFiles[file]) mgB += 20;
-          else mgB += 10;
-        }
-      }
-
-    }
-    else {
-
-      if (type === PAWN) {
-        if (wPawnFiles[file] > 1) pawnW -= 10;
-        const hasNeighbour = (file > 0 && wPawnFiles[file - 1]) || (file < 7 && wPawnFiles[file + 1]);
-        if (!hasNeighbour) pawnW -= 15;
-        let passed = 1;
-        for (let r = rank + 1; r <= 7 && passed; r++) {
-          if (bPawnFiles[file] && b[r * 16 + file] === BPAWN) { passed = 0; break; }
-          if (file > 0 && b[r * 16 + file - 1] === BPAWN) { passed = 0; break; }
-          if (file < 7 && b[r * 16 + file + 1] === BPAWN) { passed = 0; break; }
-        }
-        if (passed) {
-          pawnW += 10 + rank * 8;
-        }
-      }
-      else if (type === BISHOP) {
-        wBishops++;
-      }
-      else if (type === ROOK) {
-        wRooks++;
-        if (!wPawnFiles[file]) {
-          if (!bPawnFiles[file]) mgW += 20;
-          else mgW += 10;
-        }
-      }
-
-    }
-  }
-
-  if (wBishops >= 2) { mgW += 25; egW += 40; }
-  if (bBishops >= 2) { mgB += 25; egB += 40; }
-
+  // tapered eval
+  const mgScore = g_stm === WHITE ? mgW - mgB : mgB - mgW;
+  const egScore = g_stm === WHITE ? egW - egB : egB - egW;
   let mgPhase = phase;
   if (mgPhase > 24) mgPhase = 24;
   const egPhase = 24 - mgPhase;
 
-  const pawnScore = g_stm === WHITE ? pawnW - pawnB : pawnB - pawnW;
-  const pawnBlended = (pawnScore * (mgPhase / 2 + egPhase)) / 24 | 0;
-
-  const mgScore = g_stm === WHITE ? mgW - mgB : mgB - mgW;
-  const egScore = g_stm === WHITE ? egW - egB : egB - egW;
-
-  return ((mgScore * mgPhase + egScore * egPhase) / 24 | 0) + pawnBlended;
+  return (mgScore * mgPhase + egScore * egPhase) / 24 | 0;
 }
 
 initEval();
-
-// ============================================================================
-// >>> END EVAL REGION <<<
-// ============================================================================
 
 function collectPV(node, cNode, move) {
 
@@ -1723,6 +1805,29 @@ function report (value, depth) {
   console.log('info ' + depthStr + scoreStr + nodeStr + pvStr);
 
 }
+
+//
+// Search. Negamax with PVS (principal variation search). go() drives plain
+// iterative deepening — search(0, depth, -INF, INF) per depth, no aspiration
+// windows. search recurses into itself for non-leaf nodes and into qsearch
+// when depth <= 0.
+//
+// Pruning and reduction features (the gating conditions are load-bearing —
+// the !isPV && !inCheck && score-against-MATEISH guards keep mate scores
+// from corrupting):
+//   - TT cutoff (non-PV only). TT moves are trusted without legality
+//     re-validation; a Zobrist collision producing an illegal move is
+//     astronomically unlikely and is not defended against.
+//   - Mate distance pruning.
+//   - Static beta pruning, null-move pruning (R=3), late-move pruning,
+//     futility pruning — all !isPV && !inCheck, score-bounded.
+//   - Late move reductions, inline:
+//       R = floor(0.75 + log(depth) * log(played) / 2.25)
+//       then -inCheck, -isPV, clamped to depth - 2.
+//   - IID-ish PV reduction when no TT move: depth>5 && isPV && !ttMove → d--.
+//   - Quiet history bonus/malus on beta cutoff (via updateQpth). No separate
+//     killer-move table.
+//
 
 function search(ply, depth, alpha, beta) {
 
@@ -1909,6 +2014,15 @@ function search(ply, depth, alpha, beta) {
 
 }
 
+//
+// Quiescence search. Recurses on noisy moves only (captures + promotions)
+// to settle tactics at the leaves of the main search. When not in check we
+// stand pat on the static eval — if `ev >= beta` we return immediately,
+// otherwise alpha is raised to ev. When in check we generate all moves
+// (escapes) and there is no stand-pat. Delta pruning skips clearly losing
+// captures.
+//
+
 function qsearch(ply, depth, alpha, beta) {
 
   g_nodes++;
@@ -2056,8 +2170,8 @@ function uciExecLine(line) {
     }
 
     case 'uci': {
-      console.log('id name Naddu 1');
-      console.log('id author op12no2');
+      console.log('id name Patchwork');
+      console.log('id author Colin Jenkins');
       console.log('uciok');
       break;
     }

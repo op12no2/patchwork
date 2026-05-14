@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# use: bin/match engine1 engine2 num_rounds
+# e.g. bin/match 0000_original 0000_original 5
+# note that each round is 2 games played with the engines swapping sides
+# games are played at 10+0.1 time control and so quite quick
+
+e1=engines/$1.js
+e2=engines/$2.js
+
+concurrency=15
+book=UHO_Lichess_4852_v1
+
+e1name=${e1##*/}
+e1name=${e1name%.js}
+e1name=${e1name//[./]/_}
+
+e2name=${e2##*/}
+e2name=${e2name%.js}
+e2name=${e2name//[./]/_}
+
+CPUS=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30
+
+taskset -c $CPUS \
+~/fastchess-ob -recover -concurrency $concurrency -rounds $3 -repeat \
+-resign movecount=5 score=600 \
+-draw movenumber=40 movecount=8 score=5 \
+-engine cmd=$e1 proto=uci tc=10+0.1 timemargin=250 name=${e1name}_1 \
+-engine cmd=$e2 proto=uci tc=10+0.1 timemargin=250 name=${e2name}_2 \
+-openings file=/mnt/d/books/$book.epd format=epd order=random -srand $RANDOM \

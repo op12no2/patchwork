@@ -1,7 +1,11 @@
 "use strict"
 
-// usage: node eval.js [enginePath]   (default ./engine.js)
-const enginePath = require('path').resolve(process.argv[2] || './engine.js');
+// usage: node eval.js engine
+// e.g. node eval.js 0000_original
+// performs an evaluation over several positions also showing a cumulative eval.
+
+const enginePath = require('path').resolve('./engines/' + process.argv[2] + '.js');
+console.log(enginePath);
 const { uciExecLine, evaluate } = require(enginePath);
 
 const BENCHFENS = [

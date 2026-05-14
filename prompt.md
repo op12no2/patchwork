@@ -1,2 +1,15 @@
-Attached is a simple Javascript chess engine. Improve the playing strength by replacing or modifying the evaluation code between the line delimiters containing "BEGIN EVAL REGION" and "END EVAL REGION" only. Reply with a unified diff and a brief description of your changes only. Use your intuition to go with a good solution and do not ask for guidance. Tune and test your solution if you can.
+using 
+
+./engines/0000_original.js 
+
+as your starting point, create a new engine in ./engines 
+called 
+
+0001_haiku_4_5.js 
+
+with improved playing strength.
+
+do not ask for guidance, use your intuition.
+
+use the tools in ./tools to test and optionally use ./bin/match to run a match.
 

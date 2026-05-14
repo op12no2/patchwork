@@ -1,7 +1,7 @@
 #!/bin/bash
 
-e1=engines/0004_gpt_5_5.js
-e2=engine.js
+e1=engines/0000_original.js
+e2=engines/0000_original.js
 
 elo0=0
 elo1=5
