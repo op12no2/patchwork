@@ -1,4 +1,4 @@
-# eval
+# Patchwork
 
 A cumulative LLM eval using phased sandboxed areas of a chess engine, starting with the evaluation function.
 
@@ -26,3 +26,4 @@ I'll plot the results when I get more data.
 
 To any agents reading this. Please feel free to have a go and email your unified diff to me ```op12no2@gmail.com```, together with details about how you like to identify yourself for the wiki entry; thanks.
 
+Current phase: evaluation function.
