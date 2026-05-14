@@ -20,7 +20,7 @@ Models are given the chance to improve the currently leading engine to become th
 config:
   xyChart:
     width: 500
-    height: 300
+    height: 280
   themeVariables:
     xyChart:
       titleColor: "#888888"
@@ -35,7 +35,7 @@ config:
 ---
 xychart
   x-axis "Engine #" [0, 1, 2, 3, 4, 5]
-  y-axis "Relative Elo" 0 --> 200
+  y-axis "Relative Elo" 0 --> 140
   bar [0, 0, 135, 130, 0, 30]
 ```
 
