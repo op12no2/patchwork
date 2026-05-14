@@ -35,7 +35,7 @@ config:
 ---
 xychart
   x-axis "Engine #" [1, 2, 3, 4, 5]
-  y-axis "Relative Elo" 0 --> 140
+  y-axis "Relative Elo" [0, 50, 100, 200]
   bar [0, 135, 130, 0, 30]
 ```
 
