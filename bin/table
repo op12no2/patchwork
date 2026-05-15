@@ -40,7 +40,7 @@ awk -v anchor_name="$anchor_name" -v anchor_elo="$anchor_elo" '
     if (!anchor_idx) { print "anchor engine not found: " anchor_name > "/dev/stderr"; exit 1 }
     offset = anchor_elo - elo_n[anchor_idx]
     print "| Rank | Engine | Elo | Games | Score | Draws |"
-    print "|-----:|--------|----:|------:|------:|------:|"
+    print "|------|--------|-----|-------|-------|-------|"
     for (i = 1; i <= r; i++)
       printf "| %s | %s | %d ±%s | %s | %s | %s |\n",
         rank[i], name[i], elo_n[i] + offset, err[i], games[i], score[i], draw[i]

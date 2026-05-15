@@ -13,20 +13,30 @@ An informal cumulative and comptitive frontier model eval using a Javascript che
 | [0001_haiku_4_5](engines/0001_haiku_4_5.js)   | [Δ](engines/0001_haiku_4_5.diff)  | Anthropic Claude Haiku 4.5  | Claude Code | ✗    |                      | 
 | [0000_original](engines/0000_original.js)     |                                   |                             |             |      | Boot engine          | 
  
-Models are given the chance to improve on the currently leading engine to become the new leader using ```prompt.md``` and evaluated using a 10s+0.1s [0,5] SPRT. 
+### Procedure 
+
+Assume ```A``` is the current best engine (initially ````0000_original````). A model/CLI is selected to improve it by creating a new engine ```B``` using ```prompt.md```. If  a ```B``` v ```A``` SPRT passes, ```B``` becomes the new best engine. So for example ```0002_sonnet_4_6``` was derived from ```0000_original```, not ```0001_haiku_4_5```.   
+
+```
+    /---> 0001          /---> 0004
+0000 ---> 0002 ---> 0003 ---> 0005 ---> 0006 etc.
+   
+```
+
+See ```bin/sprt```.
 
 ### Tournament
 
 | Rank | Engine | Elo | Games | Score | Draws |
-|-----:|--------|----:|------:|------:|------:|
-| 1 | 0007_opus_4_7 | 2167 ±27.74 | 700 | 74.4% | 20.9% |
-| 2 | 0006_gpt_5_5 | 2077 ±23.16 | 700 | 63.4% | 27.4% |
-| 3 | 0004_gpt_5_5 | 2034 ±23.52 | 700 | 57.4% | 29.7% |
-| 4 | 0005_opus_4_7 | 2026 ±22.81 | 700 | 56.4% | 32.9% |
-| 5 | 0003_opus_4_7 | 2011 ±23.76 | 700 | 54.1% | 30.0% |
-| 6 | 0002_sonnet_4_6 | 1931 ±25.41 | 700 | 42.8% | 28.0% |
-| 7 | 0000_original | 1800 ±26.54 | 700 | 25.9% | 25.7% |
-| 8 | 0001_haiku_4_5 | 1796 ±26.46 | 700 | 25.6% | 24.3% |
+|-----|--------|----|------|------|------|
+| 1 | 0007_opus_4_7 | 2169 ±19.50 | 1400 | 75.8% | 22.6% |
+| 2 | 0006_gpt_5_5 | 2063 ±16.41 | 1400 | 62.9% | 29.7% |
+| 3 | 0005_opus_4_7 | 2020 ±16.18 | 1400 | 57.0% | 33.0% |
+| 4 | 0004_gpt_5_5 | 2014 ±16.12 | 1400 | 56.2% | 33.1% |
+| 5 | 0003_opus_4_7 | 2007 ±16.50 | 1400 | 55.2% | 30.6% |
+| 6 | 0002_sonnet_4_6 | 1912 ±17.79 | 1400 | 41.6% | 27.7% |
+| 7 | 0000_original | 1800 ±18.23 | 1400 | 27.2% | 27.6% |
+| 8 | 0001_haiku_4_5 | 1771 ±19.14 | 1400 | 24.1% | 23.4% |
 
 See ```bin/tourny``` for the spec.
 
@@ -36,4 +46,4 @@ See ```bin/tourny``` for the spec.
 
 ### Acknowledgements
 
--https://github.com/Disservin/fastchess - game runner
+- https://github.com/Disservin/fastchess - SPRT and tournament manager
