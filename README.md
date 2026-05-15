@@ -4,12 +4,12 @@ An informal cumulative and comptitive frontier LLM eval using a Javascript chess
 
 | Engine          | Model                       | CLI         | SPRT | ~Elo | Notes                | 
 |-----------------|-----------------------------|-------------|------|------|----------------------| 
-| 0005_opus_4_7   | Anthropic Claude Opus 4.7   | Claude Code | Pass | +30  | Leader               | 
-| 0004_gpt_5_5    | OpenAI GPT 5.5              | Codex       | Fail |      |                      |
-| 0003_opus_4_7   | Anthropic Claude Opus 4.7   | Claude Code | Pass | +130 |                      | 
-| 0002_sonnet_4_6 | Anthropic Claude Sonnet 4.6 | Claude Code | Pass | +135 |                      | 
-| 0001_haiku_4_5  | Anthropic Claude Haiku 4.5  | Claude Code | Fail |      |                      | 
-| 0000_original   |                             |             |      |      | Boot engine          | 
+| [0005_opus_4_7](engines/0005_opus_4_7.js)     | Anthropic Claude Opus 4.7   | Claude Code | Pass | +30  | Leader               | 
+| [0004_gpt_5_5](engines/0004_gpt_5_5.js)       | OpenAI GPT 5.5              | Codex       | Fail |      |                      |
+| [0003_opus_4_7](engines/0003_opus_4_7.js)     | Anthropic Claude Opus 4.7   | Claude Code | Pass | +130 |                      | 
+| [0002_sonnet_4_6](engines/0002_sonnet_4_6.js) | Anthropic Claude Sonnet 4.6 | Claude Code | Pass | +135 |                      | 
+| [0001_haiku_4_5](engines/0001_haiku_4_5.js)   | Anthropic Claude Haiku 4.5  | Claude Code | Fail |      |                      | 
+| [0000_original](engines/0000_original.js)     |                             |             |      |      | Boot engine          | 
  
 See the ```engines``` dir for each engine source.
 
