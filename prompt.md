@@ -24,6 +24,6 @@ comment your code comprehensively, identifying the changes with yourself.
 
 use the tools in ./tools and your engine natively (via node) to test. temporarily create any other testing tools you need.
 
-you can use ./bin/match to run a match between your engine and the current best engine (you'll need to chmod +x your engine). see match.pgn for the results.
+you can use ./bin/match to run a match between your engine and the current best engine (you'll need to chmod +x your engine). see match.pgn for the games.
 
 validate each candidate change with matches of several hundred games minimum — shorter runs are noise and will mislead you about whether a change is a real gain.
