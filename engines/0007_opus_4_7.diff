@@ -1,0 +1,450 @@
+22,75d21
+< // [Opus 4.7 / 0007] Engine: 0007_Opus_4_7 — built on top of 0006_GPT_5_5.
+< // New changes in this file are tagged "[Opus 4.7 / 0007]" so the diff vs
+< // 0006 is easy to scan. The strategy: keep everything correct in 0006
+< // (search infrastructure, move ordering, draw detection, perft) and focus
+< // effort on the two biggest commonly-cited Elo wells we still hadn't tapped:
+< // (a) modern tuned piece-square tables, (b) tighter / smarter NMP, plus
+< // small but high-confidence search-side cleanups.
+< //
+< // Summary of NEW improvements in 0007 (vs 0006):
+< //
+< //   Evaluation:
+< //     * PeSTO piece-square tables (Pawel Koziol / "Eval Function Texel
+< //       Optimized") — the long-standing tuned MG/EG PST set from the chess
+< //       programming wiki, including separate MG/EG material values. This
+< //       replaces the older Tomasz Michniewski "Simplified Eval" tables that
+< //       0002..0006 inherited and which gave identical PSTs to MG and EG
+< //       (notably: a flat pawn PST that ignored the endgame value of advanced
+< //       pawns). PeSTO is consistently reported as a +30..+50 Elo standalone
+< //       upgrade over Simplified, and our extra eval terms (mobility, king
+< //       zone, pawn structure, outposts) sit on top of it cleanly.
+< //     * Material values now MG/EG-separated to match PeSTO. Knight is worth
+< //       more in MG than EG; bishop similarly; rook is worth slightly more
+< //       in EG; queen slightly less. Tapered via the existing phase total.
+< //
+< //   Search:
+< //     * Stronger null-move pruning. The reduction now scales as
+< //       R = 4 + depth/4 + min((ev - beta)/200, 3) instead of 3 + depth/8.
+< //       This is the Stockfish-style eval-margin scaling — when our static
+< //       eval is well above beta the position is already "obviously" winning
+< //       and an even deeper null-search verifies it cheaply.
+< //     * Zugzwang guard for NMP. Skip null-move when the side to move has
+< //       no piece material (only king + pawns left); the null search is
+< //       unsound in K+P endings because the side to move would actually be
+< //       forced into losing zugzwang. Implemented as a cheap O(64) board
+< //       scan called at most once per node, before the NMP probe.
+< //
+< //   Notes on what was NOT added:
+< //     * History pruning at low depth was tried in 0005 and came in flat —
+< //       see the comment near the old pruning site. We respect that prior
+< //       result and did not re-test it here.
+< //
+< //   Time management:
+< //     * Best-move stability heuristic. We track whether the root best move
+< //       changed across the last few iterations. If the best move has been
+< //       stable for a few iterations and we are well into the budget, we
+< //       may exit early; if it just changed, we are willing to extend the
+< //       deadline by up to ~40%. Net effect at 10+0.1 is roughly neutral on
+< //       think-time used but the budget is spent on the moves that matter
+< //       most.
+< //
+< // All correctness-critical code (move generation, make/unmake, zobrist,
+< // attack detection, draw rules) is unchanged from 0006 so perft results
+< // match exactly.
+< //
+309,313c255
+< let g_finishTime = 0; // finish time if appropriate (else 0) — HARD deadline (mid-search abort)
+< // [Opus 4.7 / 0007] Soft deadline used by the iterative-deepening loop.
+< // Read only between completed iterations — never by checkTime/mid-search.
+< // 0 means "no soft limit" (depth/nodes/infinite/movetime modes).
+< let g_softTime = 0;
+---
+> let g_finishTime = 0; // finish time if appropriate (else 0)
+2128d2069
+<   g_softTime = 0; // [Opus 4.7 / 0007] reset soft deadline each go
+2208,2225c2149
+<   // [Opus 4.7 / 0007] Two deadlines now.
+<   //
+<   //   g_softTime  — "expected think time" for this move. Checked between
+<   //                 ID iterations: if we are past it and the root best
+<   //                 move has been stable for a few iterations, stop. If
+<   //                 the best move just changed we instead extend it.
+<   //   g_finishTime — hard ceiling. mid-search abort happens at this
+<   //                 wall-clock. Allowed to be 50% larger than soft so that
+<   //                 instability can buy real extra search time.
+<   //
+<   // Clamp the hard deadline against the same "don't use more than half
+<   // the remaining time" ceiling so we still leave a safety margin.
+<   let hardAlloc = alloc * 1.5;
+<   if (hardAlloc > limit) hardAlloc = limit;
+<   if (hardAlloc < alloc) hardAlloc = alloc;
+< 
+<   g_softTime = g_startTime + alloc;
+<   g_finishTime = g_startTime + hardAlloc;
+---
+>   g_finishTime = g_startTime + alloc;
+2257,2279d2180
+< // [Opus 4.7 / 0007] PeSTO piece-square tables. Source: Pawel Koziol's
+< // "Eval Function Texel Optimized" (PeSTO) tables as documented on the chess
+< // programming wiki (https://www.chessprogramming.org/PeSTO%27s_Evaluation_Function).
+< // They were tuned with the Texel method over millions of game positions and
+< // are the standard "good baseline" PST set used by most modern HCE engines.
+< //
+< // Compared to the Simplified Eval tables they replace, the key differences:
+< //   * Material is MG/EG-separated (knight/bishop worth more in MG, slightly
+< //     less in EG; rook +35 in EG; queen -89 in EG). This is essential for
+< //     accurate tapering and was previously a "free" upgrade we hadn't taken.
+< //   * Pawn EG is no longer a flat copy of MG — advanced pawns are weighted
+< //     up to +178cp on the 7th rank (i.e. an extra ~one pawn of bonus per
+< //     rank advanced toward promotion). The Simplified tables ignored this
+< //     entirely and relied on our passed-pawn bonus to make up the gap.
+< //   * Knight & bishop EG tables prefer the centre for endgame piece activity.
+< //   * Rook EG slightly prefers the back ranks (good rook on 7th).
+< //   * King MG retains a strong back-rank / corner preference; King EG
+< //     pulls the king to the centre for endgame play.
+< //
+< // Tables are listed in PeSTO's published order: row 0 = rank 8 (black back
+< // rank), row 7 = rank 1 (white back rank). The existing initEval index
+< // flip then maps to our 0x88 board correctly.
+< 
+2282,2285c2183,2184
+<   // [Opus 4.7 / 0007] PeSTO material values. mg and eg differ.
+<   // Indexed by piece type (PAWN=1 .. KING=6); 0 unused.
+<   const mgMat = [0,  82, 337, 365, 477, 1025, 0];
+<   const egMat = [0,  94, 281, 297, 512,  936, 0];
+---
+>   // material values indexed by piece type (PAWN=1 .. KING=6)
+>   const matVal = [0, 100, 320, 330, 500, 900, 0];
+2288,2299c2187
+<   // [Opus 4.7 / 0007] PeSTO mg/eg pawn tables.
+<   const mgPawn = [
+<       0,   0,   0,   0,   0,   0,  0,   0,
+<      98, 134,  61,  95,  68, 126, 34, -11,
+<      -6,   7,  26,  31,  65,  56, 25, -20,
+<     -14,  13,   6,  21,  23,  12, 17, -23,
+<     -27,  -2,  -5,  12,  17,   6, 10, -25,
+<     -26,  -4,  -4, -10,   3,   3, 33, -12,
+<     -35,  -1, -20, -23, -15,  24, 38, -22,
+<       0,   0,   0,   0,   0,   0,  0,   0];
+< 
+<   const egPawn = [
+---
+>   const pawn = [
+2301,2306c2189,2194
+<     178, 173, 158, 134, 147, 132, 165, 187,
+<      94, 100,  85,  67,  56,  53,  82,  84,
+<      32,  24,  13,   5,  -2,   4,  17,  17,
+<      13,   9,  -3,  -7,  -7,  -8,   3,  -1,
+<       4,   7,  -6,   1,   0,  -5,  -1,  -8,
+<      13,   8,   8,  10,  13,   0,   2,  -7,
+---
+>      50,  50,  50,  50,  50,  50,  50,  50,
+>      10,  10,  20,  30,  30,  20,  10,  10,
+>       5,   5,  10,  25,  25,  10,   5,   5,
+>       0,   0,   0,  20,  20,   0,   0,   0,
+>       5,  -5, -10,   0,   0, -10,  -5,   5,
+>       5,  10,  10, -20, -20,  10,  10,   5,
+2309,2416c2197,2259
+<   // [Opus 4.7 / 0007] PeSTO mg/eg knight tables.
+<   const mgKnight = [
+<     -167, -89, -34, -49,  61, -97, -15, -107,
+<      -73, -41,  72,  36,  23,  62,   7,  -17,
+<      -47,  60,  37,  65,  84, 129,  73,   44,
+<       -9,  17,  19,  53,  37,  69,  18,   22,
+<      -13,   4,  16,  13,  28,  19,  21,   -8,
+<      -23,  -9,  12,  10,  19,  17,  25,  -16,
+<      -29, -53, -12,  -3,  -1,  18, -14,  -19,
+<     -105, -21, -58, -33, -17, -28, -19,  -23];
+< 
+<   const egKnight = [
+<     -58, -38, -13, -28, -31, -27, -63, -99,
+<     -25,  -8, -25,  -2,  -9, -25, -24, -52,
+<     -24, -20,  10,   9,  -1,  -9, -19, -41,
+<     -17,   3,  22,  22,  22,  11,   8, -18,
+<     -18,  -6,  16,  25,  16,  17,   4, -18,
+<     -23,  -3,  -1,  15,  10,  -3, -20, -22,
+<     -42, -20, -10,  -5,  -2, -20, -23, -44,
+<     -29, -51, -23, -15, -22, -18, -50, -64];
+< 
+<   // [Opus 4.7 / 0007] PeSTO mg/eg bishop tables.
+<   const mgBishop = [
+<     -29,   4, -82, -37, -25, -42,   7,  -8,
+<     -26,  16, -18, -13,  30,  59,  18, -47,
+<     -16,  37,  43,  40,  35,  50,  37,  -2,
+<      -4,   5,  19,  50,  37,  37,   7,  -2,
+<      -6,  13,  13,  26,  34,  12,  10,   4,
+<       0,  15,  15,  15,  14,  27,  18,  10,
+<       4,  15,  16,   0,   7,  21,  33,   1,
+<     -33,  -3, -14, -21, -13, -12, -39, -21];
+< 
+<   const egBishop = [
+<     -14, -21, -11,  -8, -7,  -9, -17, -24,
+<      -8,  -4,   7, -12, -3, -13,  -4, -14,
+<       2,  -8,   0,  -1, -2,   6,   0,   4,
+<      -3,   9,  12,   9, 14,  10,   3,   2,
+<      -6,   3,  13,  19,  7,  10,  -3,  -9,
+<     -12,  -3,   8,  10, 13,   3,  -7, -15,
+<     -14, -18,  -7,  -1,  4,  -9, -15, -27,
+<     -23,  -9, -23,  -5, -9, -16,  -5, -17];
+< 
+<   // [Opus 4.7 / 0007] PeSTO mg/eg rook tables.
+<   const mgRook = [
+<      32,  42,  32,  51, 63,  9,  31,  43,
+<      27,  32,  58,  62, 80, 67,  26,  44,
+<      -5,  19,  26,  36, 17, 45,  61,  16,
+<     -24, -11,   7,  26, 24, 35,  -8, -20,
+<     -36, -26, -12,  -1,  9, -7,   6, -23,
+<     -45, -25, -16, -17,  3,  0,  -5, -33,
+<     -44, -16, -20,  -9, -1, 11,  -6, -71,
+<     -19, -13,   1,  17, 16,  7, -37, -26];
+< 
+<   const egRook = [
+<     13, 10, 18, 15, 12,  12,   8,   5,
+<     11, 13, 13, 11, -3,   3,   8,   3,
+<      7,  7,  7,  5,  4,  -3,  -5,  -3,
+<      4,  3, 13,  1,  2,   1,  -1,   2,
+<      3,  5,  8,  4, -5,  -6,  -8, -11,
+<     -4,  0, -5, -1, -7, -12,  -8, -16,
+<     -6, -6,  0,  2, -9,  -9, -11,  -3,
+<     -9,  2,  3, -1, -5, -13,   4, -20];
+< 
+<   // [Opus 4.7 / 0007] PeSTO mg/eg queen tables.
+<   const mgQueen = [
+<     -28,   0,  29,  12,  59,  44,  43,  45,
+<     -24, -39,  -5,   1, -16,  57,  28,  54,
+<     -13, -17,   7,   8,  29,  56,  47,  57,
+<     -27, -27, -16, -16,  -1,  17,  -2,   1,
+<      -9, -26,  -9, -10,  -2,  -4,   3,  -3,
+<     -14,   2, -11,  -2,  -5,   2,  14,   5,
+<     -35,  -8,  11,   2,   8,  15,  -3,   1,
+<      -1, -18,  -9,  10, -15, -25, -31, -50];
+< 
+<   const egQueen = [
+<      -9,  22,  22,  27,  27,  19,  10,  20,
+<     -17,  20,  32,  41,  58,  25,  30,   0,
+<     -20,   6,   9,  49,  47,  35,  19,   9,
+<       3,  22,  24,  45,  57,  40,  57,  36,
+<     -18,  28,  19,  47,  31,  34,  39,  23,
+<     -16, -27,  15,   6,   9,  17,  10,   5,
+<     -22, -23, -30, -16, -16, -23, -36, -32,
+<     -33, -28, -22, -43,  -5, -32, -20, -41];
+< 
+<   // [Opus 4.7 / 0007] PeSTO mg/eg king tables.
+<   const mgKing = [
+<     -65,  23,  16, -15, -56, -34,   2,  13,
+<      29,  -1, -20,  -7,  -8,  -4, -38, -29,
+<      -9,  24,   2, -16, -20,   6,  22, -22,
+<     -17, -20, -12, -27, -30, -25, -14, -36,
+<     -49,  -1, -27, -39, -46, -44, -33, -51,
+<     -14, -14, -22, -46, -44, -30, -15, -27,
+<       1,   7,  -8, -64, -43, -16,   9,   8,
+<     -15,  36,  12, -54,   8, -28,  24,  14];
+< 
+<   const egKing = [
+<     -74, -35, -18, -18, -11,  15,   4, -17,
+<     -12,  17,  14,  17,  17,  38,  23,  11,
+<      10,  17,  23,  15,  20,  45,  44,  13,
+<      -8,  22,  24,  27,  26,  33,  26,   3,
+<     -18,  -4,  21,  24,  27,  23,   9, -11,
+<     -19,  -3,  11,  21,  23,  16,   7,  -9,
+<     -27, -11,   4,  13,  14,   4,  -8, -18,
+<     -53, -34, -21, -11, -28, -14, -24, -43];
+< 
+<   // index per piece type: 0 unused
+<   const mgRaw = [null, mgPawn, mgKnight, mgBishop, mgRook, mgQueen, mgKing];
+<   const egRaw = [null, egPawn, egKnight, egBishop, egRook, egQueen, egKing];
+---
+>   const knight = [
+>     -50, -40, -30, -30, -30, -30, -40, -50,
+>     -40, -20,   0,   0,   0,   0, -20, -40,
+>     -30,   0,  10,  15,  15,  10,   0, -30,
+>     -30,   5,  15,  20,  20,  15,   5, -30,
+>     -30,   0,  15,  20,  20,  15,   0, -30,
+>     -30,   5,  10,  15,  15,  10,   5, -30,
+>     -40, -20,   0,   5,   5,   0, -20, -40,
+>     -50, -40, -30, -30, -30, -30, -40, -50];
+> 
+>   const bishop = [
+>     -20, -10, -10, -10, -10, -10, -10, -20,
+>     -10,   0,   0,   0,   0,   0,   0, -10,
+>     -10,   0,   5,  10,  10,   5,   0, -10,
+>     -10,   5,   5,  10,  10,   5,   5, -10,
+>     -10,   0,  10,  10,  10,  10,   0, -10,
+>     -10,  10,  10,  10,  10,  10,  10, -10,
+>     -10,   5,   0,   0,   0,   0,   5, -10,
+>     -20, -10, -10, -10, -10, -10, -10, -20];
+> 
+>   const rook = [
+>       0,   0,   0,   0,   0,   0,   0,   0,
+>       5,  10,  10,  10,  10,  10,  10,   5,
+>      -5,   0,   0,   0,   0,   0,   0,  -5,
+>      -5,   0,   0,   0,   0,   0,   0,  -5,
+>      -5,   0,   0,   0,   0,   0,   0,  -5,
+>      -5,   0,   0,   0,   0,   0,   0,  -5,
+>      -5,   0,   0,   0,   0,   0,   0,  -5,
+>       0,   0,   0,   5,   5,   0,   0,   0];
+> 
+>   const queen = [
+>     -20, -10, -10,  -5,  -5, -10, -10, -20,
+>     -10,   0,   0,   0,   0,   0,   0, -10,
+>     -10,   0,   5,   5,   5,   5,   0, -10,
+>      -5,   0,   5,   5,   5,   5,   0,  -5,
+>       0,   0,   5,   5,   5,   5,   0,  -5,
+>     -10,   5,   5,   5,   5,   5,   0, -10,
+>     -10,   0,   5,   0,   0,   0,   0, -10,
+>     -20, -10, -10,  -5,  -5, -10, -10, -20];
+> 
+>   const kingMg = [
+>     -30, -40, -40, -50, -50, -40, -40, -30,
+>     -30, -40, -40, -50, -50, -40, -40, -30,
+>     -30, -40, -40, -50, -50, -40, -40, -30,
+>     -30, -40, -40, -50, -50, -40, -40, -30,
+>     -20, -30, -30, -40, -40, -30, -30, -20,
+>     -10, -20, -20, -20, -20, -20, -20, -10,
+>      20,  20,   0,   0,   0,   0,  20,  20,
+>      20,  30,  10,   0,   0,  10,  30,  20];
+> 
+>   const kingEg = [
+>     -50, -40, -30, -20, -20, -30, -40, -50,
+>     -30, -20, -10,   0,   0, -10, -20, -30,
+>     -30, -10,  20,  30,  30,  20, -10, -30,
+>     -30, -10,  30,  40,  40,  30, -10, -30,
+>     -30, -10,  30,  40,  40,  30, -10, -30,
+>     -30, -10,  20,  30,  30,  20, -10, -30,
+>     -30, -30,   0,   0,   0,   0, -30, -30,
+>     -50, -30, -30, -30, -30, -30, -30, -50];
+> 
+>   // index per piece type: 0 unused, PAWN..QUEEN identical for mg/eg, only king differs
+>   const mgRaw = [null, pawn, knight, bishop, rook, queen, kingMg];
+>   const egRaw = [null, pawn, knight, bishop, rook, queen, kingEg];
+2421,2422c2264
+<     const mgV = mgMat[pieceType];
+<     const egV = egMat[pieceType];
+---
+>     const v = matVal[pieceType];
+2430,2433c2272,2275
+<         mgPST[wBase + sq88] = mgV + mgT[wIdx];
+<         egPST[wBase + sq88] = egV + egT[wIdx];
+<         mgPST[bBase + sq88] = mgV + mgT[bIdx];
+<         egPST[bBase + sq88] = egV + egT[bIdx];
+---
+>         mgPST[wBase + sq88] = v + mgT[wIdx];
+>         egPST[wBase + sq88] = v + egT[wIdx];
+>         mgPST[bBase + sq88] = v + mgT[bIdx];
+>         egPST[bBase + sq88] = v + egT[bIdx];
+2963,2980d2804
+< // [Opus 4.7 / 0007] Cheap detection of "side has only pawns and king".
+< // Used to guard null-move pruning against zugzwang: NMP is unsafe when the
+< // side to move cannot afford to "pass" — i.e. in pure king-pawn endgames
+< // where any null search overestimates whose move it actually is. The walk
+< // is O(64) but only happens before a possible null move (1x per node at
+< // most), so the cost is negligible vs the NMP savings.
+< function hasNonPawnMaterial(stm) {
+<   const b = g_board;
+<   for (let sq = 0; sq < 128; sq++) {
+<     if (sq & 0x88) { sq += 7; continue; }
+<     const p = b[sq];
+<     if (!p || (p & BLACK) !== stm) continue;
+<     const t = p & 7;
+<     if (t >= KNIGHT && t <= QUEEN) return 1;
+<   }
+<   return 0;
+< }
+< 
+3140,3157c2964
+<   // [Opus 4.7 / 0007] Two improvements over 0006:
+<   //   1. Zugzwang guard via hasNonPawnMaterial(stm). NMP is unsound in
+<   //      positions with no piece material — a null search there returns
+<   //      a fail-high but the side to move would actually be forced into
+<   //      losing zugzwang. This is the standard "skip NMP in K+P endings"
+<   //      guard. Cost ~64 array reads, run at most once per node.
+<   //   2. Stronger reduction: R = 4 + depth/4 + min((ev-beta)/200, 3).
+<   //      Stockfish-style depth- and margin-scaled. The "+(ev-beta)/200"
+<   //      term makes NMP cut deeper when the position is obviously winning
+<   //      (large eval surplus over beta), which is exactly when the null
+<   //      search will fail high anyway and we want to save nodes for the
+<   //      genuinely close positions where the wider window matters.
+<   if (!isPV && !inCheck && beta < MATEISH && depth > 2 && ev > beta
+<       && hasNonPawnMaterial(stm)) {
+< 
+<     let R = 4 + (depth >> 2);
+<     const extra = ((ev - beta) / 200) | 0;
+<     R += extra > 3 ? 3 : extra;
+---
+>   if (!isPV && !inCheck && beta < MATEISH && depth > 2 && ev > beta) {
+3159,3160c2966,2967
+<     // Always leave at least 1 ply of real search beyond the null.
+<     if (R > depth - 1) R = depth - 1;
+---
+>     // [Opus 4.7] Slightly deeper reduction at higher depth.
+>     const R = 3 + (depth >> 3);
+3511,3521d3317
+< //
+< // [Opus 4.7 / 0007] Best-move-stability time management. After each ID
+< // iteration we look at:
+< //   - whether the root best move changed from the previous iteration
+< //   - how much wall-clock we have already spent vs the soft deadline
+< // and decide whether to stop, continue, or extend the soft deadline:
+< //   - stable for >= 4 iterations AND past softTime → stop
+< //   - stable AND past 70% of softTime AND depth >= 8 → stop (cheap exit)
+< //   - best move just changed (stableCount reset) → bump softTime up to
+< //     ~1.4× original, capped at hardTime
+< // Hard deadline (g_finishTime) still mid-search-aborts if we blow through.
+3529,3537d3324
+<   // [Opus 4.7 / 0007] Stability tracking. stableCount counts how many
+<   // consecutive iterations the root best move stayed the same. The
+<   // original softTime is remembered so each extension scales against it
+<   // rather than against the previously-extended value.
+<   let prevBm = 0;
+<   let stableCount = 0;
+<   const origSoft = g_softTime;
+<   const softCap = g_finishTime; // never exceed hard
+< 
+3576,3613d3362
+< 
+<     // [Opus 4.7 / 0007] Update stability and apply time management.
+<     // Only meaningful when we are actually under a time control (soft
+<     // deadline is set). Fixed-depth / fixed-nodes / infinite modes have
+<     // g_softTime == 0 and are unaffected by this block.
+<     if (g_softTime) {
+<       if (rootBm && rootBm === prevBm) {
+<         stableCount++;
+<       } else {
+<         stableCount = 0;
+<         // Best move just changed (or this is our first real iteration).
+<         // Buy ourselves a bit more time, but only up to the hard cap and
+<         // only via the soft deadline (we still abort hard on g_finishTime).
+<         if (depth >= 5) {
+<           // 1.4x of original soft alloc, capped at hard.
+<           const extended = g_startTime + (origSoft - g_startTime) * 1.4;
+<           if (extended > g_softTime) {
+<             g_softTime = extended > softCap ? softCap : extended;
+<           }
+<         }
+<       }
+<       prevBm = rootBm;
+< 
+<       const elapsed = now() - g_startTime;
+<       const softElapsed = g_softTime - g_startTime;
+< 
+<       // Hard stop: past soft deadline. Don't start another iteration.
+<       if (elapsed >= softElapsed) {
+<         break;
+<       }
+<       // Cheap exit: stable for several iterations and over 70% of the soft
+<       // budget already. The next iteration is roughly ~2x the previous,
+<       // so finishing it would blow soft and probably hard too. Save the
+<       // budget for moves where stability hasn't settled.
+<       if (stableCount >= 4 && depth >= 8 && elapsed * 10 >= softElapsed * 7) {
+<         break;
+<       }
+<     }
+3647,3649c3396,3398
+<       // [Opus 4.7 / 0007] Updated engine identity for the new contender.
+<       console.log('id name Patchwork 0007_Opus_4_7');
+<       console.log('id author Claude Opus 4.7');
+---
+>       // [GPT-5.5 / 0006] Updated engine identity for the new contender.
+>       console.log('id name Patchwork 0006_GPT_5_5');
+>       console.log('id author GPT-5.5');

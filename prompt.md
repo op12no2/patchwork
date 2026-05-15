@@ -1,14 +1,14 @@
 using the current best chess engine
 
-./engines/0005_opus_4_7.js
+./engines/0006_gpt_5_5.js
 
 as your starting point, create a new engine in
 
-./engines/0006_gpt_5_5.js 
+./engines/0007_opus_4_7.js 
 
 with improved playing strength.
 
-your goal is to become the new best engine. you will be evaluated by a [0,5] SPRT against the current leader using bin/sprt, so plan and test as if you must clear that bar.
+your goal is to become the new best engine. you will be evaluated by a 10s+0.1s [0,5] SPRT against the current leader using bin/sprt, so plan and test as if you must clear that bar.
 
 before changing anything, read the existing engine thoroughly. identify the weakest components relative to modern chess engine techniques: search, evaluation, move ordering, time management, etc. and focus your effort where it will produce the largest elo gain.
 
@@ -30,8 +30,8 @@ validate each candidate change with matches of several hundred games minimum —
 
 other resources:-
 
-/mnt/d/engines/sf - stockfish
-/mnt/d/hcetraining/*.epd - data suitable for any evaluation function tuner/trainer you write or build into your engine
-../datagen/*.vf - viriformat data suitable for network training
-../bullet - bullet network trainer
+- /mnt/d/engines/sf - stockfish
+- /mnt/d/hcetraining/*.epd - data suitable for any evaluation function tuner/trainer you write or build into your engine
+- ../datagen/*.vf - viriformat data suitable for network training
+- ../bullet - bullet network trainer
 

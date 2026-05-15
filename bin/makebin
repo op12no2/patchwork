@@ -1,0 +1,15 @@
+#!/bin/bash
+
+set -e
+
+cd "$(dirname "$0")/../engines"
+
+for js in *.js; do
+  exe="${js%.js}.exe"
+  if [ -e "$exe" ]; then
+    echo "Skipping $exe (already exists)"
+    continue
+  fi
+  echo "Building $exe from $js"
+  bun build "$js" --compile --target=bun-windows-x64-modern --outfile "$exe"
+done
