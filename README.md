@@ -1,6 +1,6 @@
 ## Patchwork
 
-An informal cumulative and comptitive frontier model eval using a Javascript chess engine.
+An informal cumulative and comptitive frontier model eval using a Javascript chess engine. 
 
 ### Procedure 
 
@@ -13,7 +13,7 @@ Assume ```A``` is the current best engine (initially ````0000_original````). A m
 
 See ```bin/sprt```.
 
-### Engines
+### Progress
 
 | Engine                                        | Diff                              | Model                       | CLI         | SPRT | 
 |-----------------------------------------------|-----------------------------------|-----------------------------|-------------|------| 
