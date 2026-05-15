@@ -12,7 +12,7 @@ your goal is to become the new best engine. you will be evaluated by a 10s+0.1s 
 
 before changing anything, read the existing engine thoroughly. identify the weakest components relative to modern chess engine techniques: search, evaluation, move ordering, time management, etc. and focus your effort where it will produce the largest elo gain.
 
-you are encouraged to use web search to research chess engine techniques and reference implementations. the public chess programming literature (chess programming wiki, well-known open-source engines, established evaluation tables, etc.) contains many tried-and-tested ideas you may not recall unaided; drawing on them is a high-value strategy.
+you are encouraged to use web search to research chess engine techniques and reference implementations. the public chess programming literature (chess programming wiki, well-known open-source engines, established evaluation tables, etc.) contains many tried-and-tested ideas you may not recall unaided; drawing on them is a high-value strategy. leave link references for anything you include.
 
 you can also research what has been tried before in ./engines.
 
