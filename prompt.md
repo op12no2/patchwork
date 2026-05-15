@@ -32,6 +32,6 @@ other resources:-
 
 - /mnt/d/engines/sf - stockfish
 - /mnt/d/hcetraining/*.epd - data suitable for any evaluation function tuner/trainer you write or build into your engine
-- ../datagen/*.vf - viriformat data suitable for network training
-- ../bullet - bullet network trainer
+- ../datagen/*.vf - viriformat data suitable for nnue/network training
+- ../bullet - bullet nnue/network trainer
 
