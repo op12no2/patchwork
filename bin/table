@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# use: bin/table [logfile]
+# default logfile = tourny.log
+# parses the final fastchess ranking block and prints a github markdown table
+
+# anchor: shift every row's Elo so the named engine equals anchor_elo
+anchor_name=0000_original
+anchor_elo=1800
+
+log=${1:-tourny.log}
+
+if [[ ! -f $log ]]; then
+  echo "no such file: $log" >&2
+  exit 1
+fi
+
+awk -v anchor_name="$anchor_name" -v anchor_elo="$anchor_elo" '
+  /^Rank Name/ { in_table = 1; r = 0; next }
+  in_table && /^-+$/   { in_table = 0; next }
+  in_table && /^[[:space:]]*[0-9]+[[:space:]]/ {
+    # strip Ptnml(0-2) so it does not break field splitting
+    p = index($0, "[")
+    head = (p ? substr($0, 1, p - 1) : $0)
+    n = split(head, f, /[[:space:]]+/)
+    # leading whitespace puts the first real field at f[2]
+    # f[2]=rank f[3]=name f[4]=elo f[5]=+/- f[6]=nelo f[7]=+/- f[8]=games f[9]=score f[10]=draw
+    r++
+    rank[r]  = f[2]
+    name[r]  = f[3]
+    elo_n[r] = f[4] + 0
+    err[r]   = f[5]
+    games[r] = f[8]
+    score[r] = f[9]
+    draw[r]  = f[10]
+    if (f[3] == anchor_name) anchor_idx = r
+  }
+  END {
+    if (r == 0) { print "no ranking block found in " FILENAME > "/dev/stderr"; exit 1 }
+    if (!anchor_idx) { print "anchor engine not found: " anchor_name > "/dev/stderr"; exit 1 }
+    offset = anchor_elo - elo_n[anchor_idx]
+    print "| Rank | Engine | Elo | Games | Score | Draws |"
+    print "|-----:|--------|----:|------:|------:|------:|"
+    for (i = 1; i <= r; i++)
+      printf "| %s | %s | %d ±%s | %s | %s | %s |\n",
+        rank[i], name[i], elo_n[i] + offset, err[i], games[i], score[i], draw[i]
+  }
+' "$log"

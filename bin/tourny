@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# use: bin/tourny [rounds]
+# e.g. bin/tourny 100
+# runs a round-robin between every engine in ./engines/*.js
+# each round, every pair plays 2 games swapping colors on the same opening
+# default rounds=100; total games = rounds * N*(N-1) where N = engine count
+
+rm -f tourny.pgn tourny.log
+
+rounds=${1:-100}
+concurrency=15
+book=4moves_noob
+
+CPUS=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30
+
+engine_args=()
+for e in engines/*.js; do
+  name=${e##*/}
+  name=${name%.js}
+  name=${name//[./]/_}
+  engine_args+=(-engine cmd=$e proto=uci tc=10+0.1 timemargin=250 name=$name)
+done
+
+taskset -c $CPUS \
+~/fastchess-ob -recover -concurrency $concurrency -rounds $rounds -repeat \
+-tournament roundrobin \
+-resign movecount=5 score=600 \
+-draw movenumber=40 movecount=8 score=5 \
+"${engine_args[@]}" \
+-openings file=/mnt/d/books/$book.epd format=epd order=random -srand $RANDOM \
+-pgnout file=tourny.pgn 2>&1 | tee tourny.log
