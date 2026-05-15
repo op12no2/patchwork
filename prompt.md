@@ -1,22 +1,24 @@
 using the current best chess engine
 
-./engines/0003_opus_4_7.js
+./engines/0005_opus_4_7.js
 
 as your starting point, create a new engine in
 
-./engines/0005_opus_4_7.js 
+./engines/0006_gpt_5_5.js 
 
 with improved playing strength.
 
-your goal is to become the new best engine. you will be evaluated by a [0,5] SPRT against the current leader, so plan and test as if you must clear that bar.
+your goal is to become the new best engine. you will be evaluated by a [0,5] SPRT against the current leader using bin/sprt, so plan and test as if you must clear that bar.
 
-before changing anything, read the existing engine thoroughly. identify the weakest components relative to modern chess-engine technique — search, evaluation, move ordering, time management, etc. — and focus your effort where it will produce the largest elo gain.
+before changing anything, read the existing engine thoroughly. identify the weakest components relative to modern chess engine techniques: search, evaluation, move ordering, time management, etc. and focus your effort where it will produce the largest elo gain.
 
-you are encouraged to use web search to research chess-engine techniques and reference implementations. the public chess-programming literature (chess programming wiki, well-known open-source engines, established evaluation tables, etc.) contains many tried-and-tested ideas you may not recall unaided — drawing on them is a high-value strategy.
+you are encouraged to use web search to research chess engine techniques and reference implementations. the public chess programming literature (chess programming wiki, well-known open-source engines, established evaluation tables, etc.) contains many tried-and-tested ideas you may not recall unaided; drawing on them is a high-value strategy.
+
+you can also research what has been tried before in ./engines.
 
 you have carte blanche to delete/edit/fix/add any of the code as needed, regardless of previous authorship.
 
-if you have a question that materially affects your strategy, ask — the user will answer with maximising elo in mind.
+if you have a question that materially affects your strategy, ask - the user will answer with maximising elo in mind.
 
 comment your code comprehensively, identifying the changes with yourself.
 

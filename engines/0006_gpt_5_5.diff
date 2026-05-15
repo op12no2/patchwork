@@ -1,0 +1,47 @@
+22,41d21
+< // [GPT-5.5 / 0006] Engine: 0006_GPT_5_5 — built on top of 0005_Opus_4_7.
+< // New changes in this file are tagged "[GPT-5.5 / 0006]". The goal is to
+< // preserve the strong tactical/search base from 0005 while removing avoidable
+< // Node.js overhead and adding one carefully-scoped modern search refinement.
+< //
+< // Summary of NEW improvements in 0006 (vs 0005):
+< //
+< //   Search / implementation:
+< //     * Reuse a per-ply noisy-move trail for capture-history maluses instead
+< //       of allocating a new Uint32Array at every search node. That allocation
+< //       happened inside the hottest recursive function, so avoiding it reduces
+< //       GC pressure and spends more of the 10+0.1 budget on real search.
+< //     * Check-aware LMR — after making an LMR-eligible quiet move, if it gives
+< //       check, reduce it one ply less. Forcing checks are exactly the kind of
+< //       late quiet move that a generic history/move-count formula can
+< //       underestimate.
+< //
+< // All correctness-critical code (move generation, make/unmake, zobrist,
+< // attack detection, draw rules) is unchanged from 0005 so perft should match.
+< //
+454,457d433
+<   // [GPT-5.5 / 0006] Per-ply noisy trail for capture-history bonus/malus.
+<   // 0005 allocated this inside every search() call. Keeping it on nodeStruct
+<   // makes the recursive hot path allocation-free for this bookkeeping.
+<   this.playedNoisy = new Uint32Array(MAX_MOVES);
+3001,3004c2977
+<   // [GPT-5.5 / 0006] Reuse preallocated per-ply storage. This node is not
+<   // re-entered while its move loop is active (recursion uses ply+1), so the
+<   // array is safe to overwrite on each call at the same ply.
+<   const playedNoisy = node.playedNoisy;
+---
+>   const playedNoisy = new Uint32Array(MAX_MOVES);
+3068,3072d3040
+<       // [GPT-5.5 / 0006] Check-aware LMR. Quiet checking moves are forcing
+<       // and frequently tactical even when history has not learned them yet.
+<       // The board is already post-make here, so this is a direct attack test
+<       // against the opponent king; only LMR-eligible quiet late moves pay it.
+<       if (isAttacked(g_kingSq[nstm], stm)) R -= 1;
+3396,3398c3364,3366
+<       // [GPT-5.5 / 0006] Updated engine identity for the new contender.
+<       console.log('id name Patchwork 0006_GPT_5_5');
+<       console.log('id author GPT-5.5');
+---
+>       // [Opus 4.7 / 0005] Updated engine identity for the new revision.
+>       console.log('id name Patchwork 0005_Opus_4_7');
+>       console.log('id author Claude Opus 4.7');
