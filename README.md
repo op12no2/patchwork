@@ -13,7 +13,7 @@ An informal cumulative and comptitive frontier model eval using a Javascript che
 | [0001_haiku_4_5](engines/0001_haiku_4_5.js) [Δ](engines/0001_haiku_4_5.diff)    | Anthropic Claude Haiku 4.5  | Claude Code | Fail |      |                      | 
 | [0000_original](engines/0000_original.js)                                       |                             |             |      |      | Boot engine          | 
  
-Models are given the chance to improve on the currently leading engine to become the new leader using ```prompt.md```. The resultant engine is then evaluated by a 10s+0.1s [0,5] SPRT against the currently leading engine. 
+Models are given the chance to improve on the currently leading engine to become the new leader using ```prompt.md``` and evaluated using a 10s+0.1s [0,5] SPRT. 
 
 If anybody out there has the inclination to test the engines, there are Windows executables in ```./engines```.
 
