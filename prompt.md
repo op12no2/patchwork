@@ -1,4 +1,4 @@
-using the current leading chess engine
+using the currenty leading chess engine
 
 ./engines/0007_opus_4_7.js
 
@@ -16,6 +16,6 @@ resources:-
 - ./tools/ - testing tools
 - ./bin/match - match runner
 - /mnt/d/engines/sf - stockfish
-- /mnt/d/hcetraining/*.epd - data suitable for any evaluation function tuner/trainer you write or build into your engine
+- /mnt/d/hcetraining/*.epd - data suitable for hce training
 - ../datagen/*.vf - viriformat data suitable for nnue/network training
 - ../bullet - bullet nnue/network trainer

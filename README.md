@@ -4,7 +4,7 @@ An informal cumulative and comptitive frontier model eval using a Javascript che
 
 ### Procedure 
 
-Assume ```A``` is the current best engine (initially ````0000_original````). A model/CLI is selected to improve it by creating a new engine ```B``` via ```prompt.md```. If a ```B``` v ```A``` SPRT passes, ```B``` becomes the new best engine. So for example ```0002_sonnet_4_6``` was derived from ```0000_original```, not ```0001_haiku_4_5```.   
+Assume ```A``` is currently the leading engine (initially ````0000_original````). A model/CLI is selected to improve it by creating a new engine ```B``` via ```prompt.md```. If a ```B``` v ```A``` SPRT passes, ```B``` becomes the new leader. So for example ```0002_sonnet_4_6``` was derived from ```0000_original```, not ```0001_haiku_4_5```.   
 
 ```
     /---> 0001          /---> 0004
